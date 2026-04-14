@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Secrets
+douyin_cookies.txt
+*_key.py
+*.key
+config.py
+utils_local.py
+
+# Output thư mục
+step1_output/
+step2_output/
+mp3_input/
+input/*.json
+!input/README.md
+
+# Tạm thời
+temp_*
+*.tmp
+*.log
+temp_metadata_*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Windows
+Thumbs.db
+desktop.ini
