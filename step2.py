@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import subprocess
+import sys
 from utils import generate_caption, send_telegram_notification
 
 STEP1_VIDEO_DIR = Path("step1_output/videos")
@@ -19,6 +20,12 @@ def replace_audio_in_video(video_path, audio_path, output_path):
     subprocess.run(cmd, check=True)
 
 def main():
+    # Ensure Vietnamese text prints correctly on Windows consoles
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     ensure_dirs()
     if not MAPPING_FILE.exists():
         print("Chưa chạy step1 hoặc không tìm thấy mapping.json")

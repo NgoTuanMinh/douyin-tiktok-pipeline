@@ -20,6 +20,8 @@ Pipeline này giúp bạn:
 
 ```bash
 pip install -r requirements.txt
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
 ```
 
 ## Cấu hình (ENV)

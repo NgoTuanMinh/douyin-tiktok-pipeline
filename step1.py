@@ -1,7 +1,9 @@
 import json
+import os
 import shutil
+import sys
 from pathlib import Path
-from utils import download_douyin_video, crop_subtitle, transcribe_audio, translate_text
+from utils import download_douyin_video_playwright as download_douyin_video, crop_subtitle, transcribe_audio, translate_text
 
 INPUT_JSON_DIR = Path("input")
 STEP1_OUTPUT = Path("step1_output")
@@ -50,6 +52,12 @@ def process_one_video(task):
     }
 
 def main():
+    # Ensure Vietnamese text prints correctly on Windows consoles
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     ensure_dirs()
     json_files = list(INPUT_JSON_DIR.glob("*.json"))
     if not json_files:
