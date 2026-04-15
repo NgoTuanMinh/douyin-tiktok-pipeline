@@ -3,7 +3,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from utils import download_douyin_video_playwright as download_douyin_video, crop_subtitle, transcribe_audio, translate_text
+from utils import download_video_direct as download_douyin_video, crop_subtitle, transcribe_audio, translate_text
 
 INPUT_JSON_DIR = Path("input")
 STEP1_OUTPUT = Path("step1_output")
@@ -17,8 +17,10 @@ def ensure_dirs():
     SCRIPT_DIR.mkdir(exist_ok=True)
 
 def process_one_video(task):
-    vid = task.get("video_id", task["douyin_video_url"].split("/")[-1].split("?")[0])
-    url = task["douyin_video_url"]
+    vid = task.get("video_id", task.get("douyin_video_url", "").split("/")[-1].split("?")[0])
+    url = task.get("download_video_url")
+    if not url:
+        raise Exception(f"Không tìm thấy download_video_url cho video {vid} trong json input.")
     has_audio = task.get("has_audio_speech", False)
     has_sub = task.get("has_hard_subtitle", False)
     product_name = task.get("product_name_viet", "")

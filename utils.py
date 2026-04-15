@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 import requests
 import time
 import re
-from playwright.sync_api import sync_playwright
+
 
 # ===== CẤU HÌNH API =====
 # Đường dẫn đến thư mục bạn vừa clone API ở Bước 1
@@ -22,7 +22,7 @@ API_BASE_URL = "http://127.0.0.1:8000"
 load_dotenv()
 
 GENAI_API_KEY = os.getenv("GENAI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-pro")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
@@ -105,56 +105,24 @@ def download_douyin_video(url, output_path):
     print(f"Đã lưu video thành công tại: {output_path}")
     return output_path
 
-def download_douyin_video_playwright(url, output_path, max_retries=3):
+def download_video_direct(url, output_path, max_retries=3):
     """
-    Dùng playwright mở douyin.wtf, paste link, click download, lấy link file .mp4.
+    Tải video trực tiếp từ url cho trước không cần mở trình duyệt.
     """
     for attempt in range(max_retries):
         try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)  # False để debug
-                page = browser.new_page()
-                page.goto("https://tikgo.me/douyin/", timeout=30000)
+            print(f"  Đang trực tiếp tải video từ link...")
+            r = requests.get(url, stream=True, timeout=120)
+            if r.status_code != 200:
+                raise Exception(f"Lỗi tải video HTTP: {r.status_code}")
                 
-                # Chờ input xuất hiện (selector có thể thay đổi, cần cập nhật)
-                # Hiện tại douyin.wtf dùng input có class "form-control" hoặc name "url"
-                input_selector = "input[id='download-url-input']"  # hoặc "input[name='url']"
-                page.wait_for_selector(input_selector, timeout=10000)
-                page.fill(input_selector, url)
-                
-                # Click nút download (thường có text "Download" hoặc "Get Video")
-                download_btn = page.locator("button:has-text('Download')")
-                if download_btn.count() == 0:
-                    download_btn = page.locator("button:has-text('Get')")
-
-                if download_btn.count() == 0:
-                    download_btn = page.locator("button[class*='TikTokDownloader_downloadButton']")
-
-                download_btn.click()
-                
-                # Chờ link tải xuất hiện (thường trong thẻ <a> chứa .mp4)
-                time.sleep(10)  # chờ xử lý
-                video_link_elem = page.locator("a[href*='.mp4']").first
-                if not video_link_elem:
-                    # fallback: tìm trong script
-                    html = page.content()
-                    match = re.search(r'''https?://[^\s"']+\.mp4''', html)
-                    if match:
-                        video_url = match.group(0)
-                    else:
-                        raise Exception("Không tìm thấy link MP4")
-                else:
-                    video_url = video_link_elem.get_attribute("href")
-                
-                browser.close()
-                
-                # Tải file MP4 bằng requests
-                r = requests.get(video_url, stream=True, timeout=60)
-                with open(output_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                return output_path
-                
+            with open(output_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            
+            print(f"  Đã tải thành công: {output_path}")
+            return str(output_path)
+            
         except Exception as e:
             print(f"Lần thử {attempt+1} thất bại: {e}")
             time.sleep(5)
