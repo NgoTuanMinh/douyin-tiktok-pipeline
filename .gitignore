@@ -23,7 +23,7 @@ utils_local.py
 step1_output/
 step2_output/
 mp3_input/
-input/*.json
+
 !input/README.md
 
 # Tạm thời
