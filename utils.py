@@ -4,19 +4,14 @@ import json
 from pathlib import Path
 import yt_dlp
 import whisper
-import google.generativeai as genai
 from telegram import Bot
 from dotenv import load_dotenv
 import requests
 import time
 import re
 
-
-# ===== CẤU HÌNH API =====
-# Đường dẫn đến thư mục bạn vừa clone API ở Bước 1
-API_PROJECT_PATH = r"E:\ToolAir\Douyin_TikTok_Download_API" 
-# Địa chỉ API sẽ chạy trên máy local
-API_BASE_URL = "http://127.0.0.1:8000"
+# Import Gemini client từ file riêng
+from gemini_client import GeminiWebClient
 
 # ------------------- Cấu hình -------------------
 load_dotenv()
@@ -31,6 +26,7 @@ DOUYIN_COOKIEFILE = os.getenv("DOUYIN_COOKIEFILE", "douyin_cookies.txt")
 WHISPER_MODEL_NAME = os.getenv("WHISPER_MODEL", "base")
 
 _whisper_model = None
+_gemini_client = None  # Global Gemini client instance
 
 def _get_whisper_model():
     global _whisper_model
@@ -38,72 +34,27 @@ def _get_whisper_model():
         _whisper_model = whisper.load_model(WHISPER_MODEL_NAME)
     return _whisper_model
 
-def _ensure_genai_configured():
-    if not GENAI_API_KEY:
-        raise RuntimeError("Thiếu GENAI_API_KEY (hãy set trong env hoặc file .env)")
-    genai.configure(api_key=GENAI_API_KEY)
 
-def start_api_server():
-    """Khởi động server API trong một tiến trình riêng biệt."""
-    import subprocess
-    import sys
-    import os
-    # Kiểm tra nếu server chưa chạy, hãy khởi động nó
-    try:
-        requests.get(f"{API_BASE_URL}/docs", timeout=2)
-        print("API server đã hoạt động.")
-    except requests.ConnectionError:
-        print("Đang khởi động API server...")
-        # Chạy server bằng lệnh uvicorn
-        subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000"],
-            cwd=API_PROJECT_PATH,
-            shell=True
-        )
-        time.sleep(5) # Chờ server khởi động
-        print("API server đã sẵn sàng.")
+def get_gemini_client(headless: bool = True):
+    """
+    Lấy hoặc khởi tạo GeminiWebClient (singleton pattern)
+    """
+    global _gemini_client
+    if _gemini_client is None:
+        print("🚀 Khởi tạo Gemini Web Client lần đầu...")
+        _gemini_client = GeminiWebClient(headless=headless)
+        _gemini_client.start()
+    return _gemini_client
 
-# Chạy lệnh này trước khi chạy step 1: python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-# ------------------- Tải video -------------------
-def download_douyin_video(url, output_path):
-    """Tải video Douyin bằng Douyin_TikTok_Download_API."""
-    # Đảm bảo server API đã chạy
-    # start_api_server()
-    
-    # Gọi API để lấy thông tin video
-    api_endpoint = f"{API_BASE_URL}/api/download"
-    params = {"url": url, "prefix": "true", "with_watermark": "false"}
-    
-    print(f"Đang gửi yêu cầu tới API: {api_endpoint}")
-    response = requests.get(api_endpoint, params=params)
-    
-    if response.status_code != 200:
-        raise Exception(f"API trả về lỗi: {response.status_code} - {response.text}")
-    
-    # Parse kết quả từ API
-    result = response.json()
-    
-    if result.get("status") != "success" or not result.get("video_data"):
-        raise Exception(f"API không tìm thấy video. Phản hồi: {result}")
-    
-    # Lấy link video không watermark
-    video_url = result["video_data"]["video_url"]
-    if not video_url:
-        raise Exception("API không trả về link video.")
-    
-    # Tải video về từ link trực tiếp
-    print(f"Đang tải video từ: {video_url}")
-    video_response = requests.get(video_url, stream=True)
-    if video_response.status_code != 200:
-        raise Exception(f"Lỗi tải video: {video_response.status_code}")
-    
-    # Ghi file ra đĩa
-    with open(output_path, 'wb') as f:
-        for chunk in video_response.iter_content(chunk_size=8192):
-            f.write(chunk)
-    
-    print(f"Đã lưu video thành công tại: {output_path}")
-    return output_path
+
+def close_gemini_client():
+    """
+    Đóng Gemini client khi không cần dùng nữa
+    """
+    global _gemini_client
+    if _gemini_client is not None:
+        _gemini_client.close()
+        _gemini_client = None
 
 def download_video_direct(url, output_path, max_retries=3):
     """
@@ -143,38 +94,60 @@ def crop_subtitle(input_video, output_video, crop_percent=0.15):
     subprocess.run(cmd, check=True)
     return output_video
 
+
 # ------------------- Transcribe -------------------
 def transcribe_audio(video_path):
     result = _get_whisper_model().transcribe(video_path, language="zh")
     return result["text"]
 
-# ------------------- Dịch -------------------
-def translate_text(text, target_lang="vi"):
-    _ensure_genai_configured()
-    model = genai.GenerativeModel(GEMINI_MODEL)
-    prompt = f"Dịch đoạn văn sau từ tiếng Trung sang tiếng Việt, giữ nguyên phong cách quảng cáo, tự nhiên:\n\n{text}"
-    response = model.generate_content(prompt)
-    return response.text
 
-# ------------------- Sinh caption -------------------
-def generate_caption(product_name):
-    _ensure_genai_configured()
-    model = genai.GenerativeModel(GEMINI_MODEL)
-    prompt = f"Tạo caption ngắn gọn, thu hút cho sản phẩm '{product_name}' trên TikTok, kèm 3-5 hashtag phù hợp. Xuất theo format: CAPTION: ... | HASHTAGS: #a #b"
-    response = model.generate_content(prompt)
-    text = response.text
-    caption_part = text.split("| HASHTAGS:")[0].replace("CAPTION:", "").strip()
-    hashtag_part = text.split("| HASHTAGS:")[1].strip() if "| HASHTAGS:" in text else ""
-    return caption_part, hashtag_part
+# ------------------- Dịch (dùng Gemini Web thay vì API) -------------------
+def translate_text(text, target_lang="vi", max_retries=3):
+    """
+    Dịch văn bản sử dụng Gemini Web Client (vượt qua giới hạn API)
+    """
+    for attempt in range(max_retries):
+        try:
+            client = get_gemini_client()
+            return client.translate(text)
+        except Exception as e:
+            print(f"  [Cảnh báo] Lần thử {attempt+1} dịch thất bại: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(5)
+                # Refresh client nếu cần
+                close_gemini_client()
+            else:
+                raise Exception(f"Không thể dịch text sau {max_retries} lần thử: {e}")
 
-# ------------------- Gửi Telegram (sửa lỗi tên file tạm) -------------------
+
+# ------------------- Sinh caption (dùng Gemini Web thay vì API) -------------------
+def generate_caption(product_name, max_retries=3):
+    """
+    Sinh caption sử dụng Gemini Web Client (vượt qua giới hạn API)
+    """
+    for attempt in range(max_retries):
+        try:
+            client = get_gemini_client()
+            return client.generate_caption(product_name)
+        except Exception as e:
+            print(f"  [Cảnh báo] Lần thử {attempt+1} sinh caption thất bại: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(5)
+                close_gemini_client()
+            else:
+                raise Exception(f"Không thể sinh caption sau {max_retries} lần thử: {e}")
+
+
+# ------------------- Gửi Telegram -------------------
 def send_telegram_notification(video_path, metadata):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        raise RuntimeError("Thiếu TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID (hãy set trong env hoặc file .env)")
+        print("⚠️ Thiếu TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID, bỏ qua gửi Telegram")
+        return
+    
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     with open(video_path, 'rb') as v:
-        bot.send_video(TELEGRAM_CHAT_ID, v, caption=metadata.get('caption', ''))
-    # Dùng tên file tạm theo video_id để tránh ghi đè
+        bot.send_video(TELEGRAM_CHAT_ID, v, caption=metadata.get('caption', '')[:1024])
+    
     vid = metadata.get('video_id', 'unknown')
     temp_meta = f"temp_metadata_{vid}.json"
     with open(temp_meta, 'w', encoding='utf-8') as f:
@@ -182,3 +155,49 @@ def send_telegram_notification(video_path, metadata):
     with open(temp_meta, 'rb') as f:
         bot.send_document(TELEGRAM_CHAT_ID, f)
     os.remove(temp_meta)
+
+
+# ------------------- Hàm tiện ích -------------------
+def ensure_dirs(dirs: list):
+    """Đảm bảo các thư mục tồn tại"""
+    for d in dirs:
+        Path(d).mkdir(parents=True, exist_ok=True)
+
+
+def clean_filename(name: str) -> str:
+    """Làm sạch tên file, loại bỏ ký tự đặc biệt"""
+    return re.sub(r'[<>:"/\\|?*]', '_', name)
+
+
+def check_ffmpeg() -> bool:
+    """Kiểm tra FFmpeg đã được cài đặt chưa"""
+    try:
+        subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("❌ FFmpeg chưa được cài đặt hoặc không có trong PATH")
+        print("   Vui lòng tải FFmpeg từ https://ffmpeg.org/download.html")
+        print("   và thêm đường dẫn bin vào biến môi trường PATH")
+        return False
+
+
+# ------------------- Cleanup khi kết thúc -------------------
+import atexit
+atexit.register(close_gemini_client)
+
+
+# Export các hàm cần dùng
+__all__ = [
+    'download_douyin_video',
+    'download_video_direct',
+    'crop_subtitle',
+    'transcribe_audio',
+    'translate_text',
+    'generate_caption',
+    'send_telegram_notification',
+    'ensure_dirs',
+    'clean_filename',
+    'check_ffmpeg',
+    'get_gemini_client',
+    'close_gemini_client'
+]

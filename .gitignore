@@ -41,3 +41,5 @@ temp_metadata_*.json
 # Windows
 Thumbs.db
 desktop.ini
+
+chrome-profile-debug/
